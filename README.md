@@ -149,9 +149,30 @@ Alle Farben stehen im `STYLE`-Block. Der Akzent ist Violett (`#a78bfa`) mit Cyan
 Ersetze diese Werte, um Jadon in deiner eigenen Farbe zu gestalten. Die Suchmaschine änderst du
 über die Konstante `SEARCH_URL` (und das `action`-Attribut in `START_PAGE`).
 
-## Als eigenständige App bauen (optional)
+## Als eigenständige App bauen
 
-Mit PyInstaller lässt sich Jadon als ausführbare Datei verpacken:
+### Automatisch über GitHub Actions
+
+Die Datei `.github/workflows/build.yml` baut Jadon bei jedem Push auf `main` für **Windows, macOS
+und Linux** und legt die Programme als Download unter *Actions → Lauf auswählen → Artifacts* ab.
+
+Für ein offizielles Release setzt du einen Tag:
+
+```bash
+git tag v1.0.0
+git push --tags
+```
+
+Danach erscheinen unter *Releases* automatisch `Jadon-windows-x64.zip`, `Jadon-macos-arm64.zip`
+und `Jadon-linux-x64.tar.gz`. Der Build lässt sich auch manuell über *Actions → Build Jadon → Run workflow* starten.
+
+Hinweise zu den fertigen Paketen:
+
+- **Windows:** `Jadon.exe` im entpackten Ordner starten. SmartScreen warnt bei unsignierten Programmen („Weitere Informationen → Trotzdem ausführen").
+- **macOS:** Die App ist nur ad-hoc signiert. Beim ersten Start per Rechtsklick auf *Öffnen* bestätigen. Mikrofon und Kamera fragt macOS dann normal ab.
+- **Linux:** Archiv entpacken und `./Jadon/Jadon` starten.
+
+### Lokal bauen
 
 ```bash
 pip install pyinstaller
@@ -159,6 +180,13 @@ pyinstaller --noconfirm --windowed --name Jadon jadon.py
 ```
 
 Das Ergebnis liegt danach im Ordner `dist/`.
+
+## Sicherheit
+
+Hat Windows-Sicherheit bei der `.exe` angeschlagen? Das passiert bei mit PyInstaller gebauten
+Programmen häufig (False Positive). Wie du Downloads per Prüfsumme und Herkunftsnachweis
+verifizierst, was du bei einem Alarm tun kannst und wie Jadon selbst geschützt ist, steht in
+[SECURITY.md](SECURITY.md).
 
 ## Roadmap
 

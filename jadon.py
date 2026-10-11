@@ -129,6 +129,10 @@ def load_json(path, default):
 def save_json(path, data):
     try:
         DATA_DIR.mkdir(parents=True, exist_ok=True)
+        try:
+            os.chmod(DATA_DIR, 0o700)  # nur der eigene Benutzer (Linux/macOS)
+        except OSError:
+            pass
         path.write_text(json.dumps(data, ensure_ascii=False, indent=1), encoding="utf-8")
     except Exception:
         pass
@@ -160,7 +164,26 @@ def notify(title, message):
         tray.showMessage(title, message, QSystemTrayIcon.MessageIcon.Information, 6000)
 
 
+RISKY_EXTENSIONS = {
+    ".exe", ".msi", ".bat", ".cmd", ".com", ".scr", ".ps1", ".vbs", ".vbe", ".js", ".jse",
+    ".wsf", ".hta", ".jar", ".lnk", ".dll", ".reg", ".cpl", ".msix", ".appx", ".pif",
+}
+
+
 def on_download(dl):
+    name = dl.downloadFileName()
+    if os.path.splitext(name)[1].lower() in RISKY_EXTENSIONS:
+        answer = QMessageBox.warning(
+            QApplication.activeWindow(), "Download-Warnung",
+            f"„{name}“ ist ein ausführbares Programm bzw. Skript.\n"
+            "Solche Dateien können deinen Computer beschädigen. Lade sie nur von Quellen herunter, denen du vertraust.\n\n"
+            "Trotzdem herunterladen?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if answer != QMessageBox.StandardButton.Yes:
+            dl.cancel()
+            return
     path, _ = QFileDialog.getSaveFileName(QApplication.activeWindow(), "Datei speichern", dl.downloadFileName())
     if not path:
         dl.cancel()
@@ -226,11 +249,28 @@ def configure_profile(profile, private=False):
 class Page(QWebEnginePage):
     INTERNAL = {"http", "https", "file", "about", "data", "blob", "javascript", "view-source",
                 "qrc", "chrome", "chrome-error", "devtools", "ftp", "filesystem"}
+    # Nur diese Programme dürfen von Webseiten gestartet werden – und nur nach einem Klick + Bestätigung.
+    # Alles andere (z. B. ms-msdt:, search-ms:, ms-officecmd:) wird blockiert.
+    EXTERNAL_ALLOWED = {
+        "mailto": "dein E-Mail-Programm", "tel": "die Telefon-App", "sms": "die Nachrichten-App",
+        "zoommtg": "Zoom", "zoomus": "Zoom", "msteams": "Microsoft Teams", "slack": "Slack",
+        "discord": "Discord", "spotify": "Spotify", "skype": "Skype", "tg": "Telegram",
+        "whatsapp": "WhatsApp", "webcal": "deinen Kalender",
+    }
 
     def acceptNavigationRequest(self, url, nav_type, is_main_frame):
-        # mailto:, tel:, zoommtg: usw. → an das Betriebssystem übergeben
-        if is_main_frame and url.scheme() and url.scheme() not in self.INTERNAL:
-            QDesktopServices.openUrl(url)
+        scheme = url.scheme()
+        if is_main_frame and scheme and scheme not in self.INTERNAL:
+            clicked = nav_type == QWebEnginePage.NavigationType.NavigationTypeLinkClicked
+            if clicked and scheme in self.EXTERNAL_ALLOWED:
+                answer = QMessageBox.question(
+                    QApplication.activeWindow(), "Externes Programm",
+                    f"Diese Seite möchte {self.EXTERNAL_ALLOWED[scheme]} öffnen.\nZulassen?",
+                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                    QMessageBox.StandardButton.No,
+                )
+                if answer == QMessageBox.StandardButton.Yes:
+                    QDesktopServices.openUrl(url)
             return False
         return super().acceptNavigationRequest(url, nav_type, is_main_frame)
 
