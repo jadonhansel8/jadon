@@ -7,7 +7,7 @@
 
 <p align="center">
   <img alt="Python" src="https://img.shields.io/badge/Python-3.9%2B-blue">
-  <img alt="Qt" src="https://img.shields.io/badge/Qt-PySide6-41cd52">
+  <img alt="Qt" src="https://img.shields.io/badge/Qt-PyQt6-41cd52">
   <img alt="Lizenz" src="https://img.shields.io/badge/Lizenz-MIT-green">
   <img alt="Plattformen" src="https://img.shields.io/badge/Windows%20%7C%20macOS%20%7C%20Linux-lightgrey">
 </p>
@@ -60,7 +60,7 @@ Webseiten werden über das Modul *Qt WebEngine* dargestellt. Das bedeutet:
 
 ## Installation
 
-Voraussetzung: **Python 3.9 oder neuer** und **PySide6 6.8 oder neuer** (wird mit `requirements.txt` installiert).
+Voraussetzung: **Python 3.9 oder neuer** und **PyQt6 6.8 oder neuer** mit PyQt6-WebEngine (wird mit `requirements.txt` installiert).
 
 ```bash
 git clone https://github.com/DEIN-NAME/jadon.git
@@ -132,12 +132,69 @@ in Meet oder Discord). Dein **Mikrofon** ist davon getrennt und wird in der Anru
 Jadon verhindert außerdem, dass Chromium den Stream drosselt, wenn das Fenster verdeckt oder
 minimiert ist.
 
+### Fehlersuche unter Windows 11 (Freunde sehen nichts oder ein schwarzes Bild)
+
+Öffne in Jadon das Menü **⋯ → Bildschirm-/Mikrofon-Diagnose**, klicke auf *Bildschirm teilen* und wähle
+*Gesamter Bildschirm*. Rechts siehst du „So kommt es bei Freunden an“ – das ist ein lokaler Sendetest
+über dieselbe Technik, die Discord benutzt.
+
+| Ergebnis in der Diagnose | Bedeutung / Lösung |
+|--------------------------|--------------------|
+| Beide Vorschauen zeigen deinen Bildschirm | Jadon ist in Ordnung. Das Problem liegt in Discord (Kanal, Stream-Einstellungen, Seite neu laden mit `Strg + Shift + R`). |
+| Vorschau **schwarz** | Meist ein Grafikkarten-Problem. Siehe unten. |
+| Fehler `NotAllowedError` / Dialog erscheint nicht | Auswahlfenster abgebrochen oder abgelehnt. Erneut versuchen und „Teilen“ klicken. |
+| Links Bild, rechts nichts / „KEIN Bild übertragen“ | Videocodec-Problem. Bitte den Text aus dem Protokoll als Issue melden. |
+
+**Schwarzes Bild beheben:**
+
+1. *Einstellungen → System → Bildschirm → Grafik*: `python.exe` (oder `Jadon.exe`) hinzufügen →
+   *Optionen* → **Energiesparen** wählen, damit Jadon auf derselben GPU läuft wie dein Bildschirm (typisch bei Laptops mit zwei Grafikkarten).
+2. Teile den **gesamten Bildschirm** statt einzelner Fenster.
+3. Starte Jadon testweise ohne GPU-Beschleunigung:
+   ```powershell
+   $env:QTWEBENGINE_CHROMIUM_FLAGS="--disable-gpu"
+   python jadon.py
+   ```
+
+### Discord im Browser (discord.com/app)
+
+So teilst du mit möglichst vollständiger Übertragung:
+
+1. Tritt einem Sprachkanal bei und klicke auf **Bildschirm**.
+2. Wähle in Jadon den Reiter **Gesamter Bildschirm** (nicht „Fenster").
+   Fenster-Aufnahmen sind bei manchen Programmen schwarz, und Systemton gibt es nur beim ganzen Bildschirm.
+3. Schalte in Discords Stream-Fenster **Audio** ein (nur Windows).
+4. Dein Mikrofon wählst du in Discord unter *Einstellungen → Sprache & Video*.
+
+Grenzen der Web-Version (liegen an Discord, nicht an Jadon): Es gibt keine automatische Spiele-Erkennung,
+keinen separaten Spiele-Ton, und hohe Auflösungen/Bildraten (z. B. 1080p60) brauchen Nitro.
+Wer das volle Discord-Erlebnis braucht, nutzt dafür die Desktop-App von Discord.
+
+## Twitch, YouTube & Co. („Fehler #4000“)
+
+Twitch und YouTube-Livestreams nutzen **H.264 und AAC**. Diese Codecs sind in den **PySide6**-Paketen
+nicht enthalten – dort erscheint bei Twitch „Das Video ist nicht verfügbar oder wird in diesem Browser nicht
+unterstützt (Fehler #4000)“. Jadon nutzt deshalb **PyQt6** (`requirements.txt`), sofern es installiert ist:
+
+```bash
+pip uninstall -y PySide6 PySide6-Addons PySide6-Essentials shiboken6
+pip install -r requirements.txt
+python jadon.py
+```
+
+Prüfen kannst du es im Menü **⋯ → Bildschirm-/Mikrofon-Diagnose**: Dort steht oben, welche Codecs
+(H.264, AAC, VP9, AV1, Opus) verfügbar sind. Steht bei „H.264“ ein ✘, ist die Engine ohne diese Codecs gebaut.
+
+**Lizenz-Hinweis:** PyQt6 steht unter GPLv3. Gibst du Jadon-Programme weiter (z. B. über GitHub-Releases),
+müssen sie unter den Bedingungen der GPLv3 bereitgestellt werden – der offene Quellcode im Repository erfüllt das.
+Für H.264/AAC können außerdem Patentlizenzen relevant sein. Wer das vermeiden will, nutzt
+`requirements-pyside6.txt` (ohne H.264/AAC).
+
 ## Bekannte Grenzen
 
 - **DRM-Streaming** (Netflix, Disney+, Prime Video in HD) braucht das Widevine-Modul, das Qt
   nicht mitliefert. Es kann funktionieren, wenn Google Chrome installiert ist und du den Pfad
   per `QTWEBENGINE_CHROMIUM_FLAGS="--widevine-path=..."` angibst.
-- Manche Videoformate (H.264/AAC) hängen davon ab, wie deine Qt-Version gebaut wurde.
 - Es gibt keine Erweiterungen (Chrome-Web-Store) und keine Passwort-Synchronisierung.
 - Einige Dienste (z. B. Google Meet) melden sich mit der Qt-Engine unterschiedlich gut. Jadon gibt sich
   deshalb als Chrome aus; sollte etwas nicht gehen, bitte ein Issue mit Seite und Fehlermeldung öffnen.

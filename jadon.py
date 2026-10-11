@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Jadon – ein schneller, schöner Desktop-Browser.
-Gebaut mit Python + Qt (PySide6). Kein Electron.
+Gebaut mit Python + Qt (PyQt6, alternativ PySide6). Kein Electron.
 
 Start:
     pip install -r requirements.txt
@@ -32,19 +32,38 @@ if _flags:
         os.environ.get("QTWEBENGINE_CHROMIUM_FLAGS", "") + " " + " ".join(_flags)
     ).strip()
 
-from PySide6.QtCore import QCoreApplication, QLocale, Qt, QUrl
-from PySide6.QtGui import (
-    QBrush, QColor, QDesktopServices, QFont, QIcon, QKeySequence,
-    QLinearGradient, QPainter, QPixmap, QShortcut,
-)
-from PySide6.QtPrintSupport import QPrintDialog, QPrinter
-from PySide6.QtWebEngineCore import QWebEnginePage, QWebEngineProfile, QWebEngineSettings
-from PySide6.QtWebEngineWidgets import QWebEngineView
-from PySide6.QtWidgets import (
-    QApplication, QDialog, QDialogButtonBox, QFileDialog, QFormLayout, QHBoxLayout,
-    QLabel, QLineEdit, QListView, QMainWindow, QMenu, QMessageBox, QProgressBar,
-    QStackedWidget, QSystemTrayIcon, QTabBar, QTabWidget, QToolButton, QVBoxLayout, QWidget,
-)
+# PyQt6 wird bevorzugt: Dessen Qt-WebEngine-Pakete spielen H.264/AAC ab (Twitch, YouTube-Livestreams ...).
+# Die PySide6-Pakete enthalten diese Codecs nicht (Twitch zeigt dann „Fehler #4000“).
+try:
+    from PyQt6.QtCore import QCoreApplication, QLocale, Qt, QUrl
+    from PyQt6.QtGui import (
+        QAction, QBrush, QColor, QDesktopServices, QFont, QIcon, QKeySequence,
+        QLinearGradient, QPainter, QPixmap, QShortcut,
+    )
+    from PyQt6.QtPrintSupport import QPrintDialog, QPrinter
+    from PyQt6.QtWebEngineCore import QWebEnginePage, QWebEngineProfile, QWebEngineSettings
+    from PyQt6.QtWebEngineWidgets import QWebEngineView
+    from PyQt6.QtWidgets import (
+        QApplication, QDialog, QDialogButtonBox, QFileDialog, QFormLayout, QHBoxLayout,
+        QLabel, QLineEdit, QListView, QMainWindow, QMenu, QMessageBox, QProgressBar,
+        QStackedWidget, QSystemTrayIcon, QTabBar, QTabWidget, QToolButton, QVBoxLayout, QWidget,
+    )
+    BINDING = "PyQt6"
+except ImportError:
+    from PySide6.QtCore import QCoreApplication, QLocale, Qt, QUrl
+    from PySide6.QtGui import (
+        QAction, QBrush, QColor, QDesktopServices, QFont, QIcon, QKeySequence,
+        QLinearGradient, QPainter, QPixmap, QShortcut,
+    )
+    from PySide6.QtPrintSupport import QPrintDialog, QPrinter
+    from PySide6.QtWebEngineCore import QWebEnginePage, QWebEngineProfile, QWebEngineSettings
+    from PySide6.QtWebEngineWidgets import QWebEngineView
+    from PySide6.QtWidgets import (
+        QApplication, QDialog, QDialogButtonBox, QFileDialog, QFormLayout, QHBoxLayout,
+        QLabel, QLineEdit, QListView, QMainWindow, QMenu, QMessageBox, QProgressBar,
+        QStackedWidget, QSystemTrayIcon, QTabBar, QTabWidget, QToolButton, QVBoxLayout, QWidget,
+    )
+    BINDING = "PySide6"
 
 APP_NAME = "Jadon"
 SEARCH_URL = "https://duckduckgo.com/?q={}"
@@ -79,6 +98,150 @@ START_PAGE = """
     <input name="q" placeholder="Suchen oder Adresse eingeben …" autofocus autocomplete="off">
   </form>
 </body></html>
+"""
+
+TEST_PAGE = r"""
+<!doctype html><html lang="de"><head><meta charset="utf-8"><title>Jadon – Diagnose</title>
+<style>
+  body{margin:0;padding:32px;font-family:'Segoe UI',system-ui,sans-serif;color:#e9e7f5;background:#12111a;line-height:1.5}
+  h1{font-weight:300;letter-spacing:.2em;margin:0 0 4px} h2{font-weight:500;margin:0 0 10px}
+  .muted{opacity:.55;font-size:13px;word-break:break-all}
+  section{background:#1d1c28;border:1px solid #34324a;border-radius:14px;padding:20px;margin:20px 0;max-width:980px}
+  button{background:#7c5cf0;color:#fff;border:0;border-radius:10px;padding:9px 18px;font-size:14px;cursor:pointer;margin:0 6px 8px 0}
+  button.g{background:#34324a} button:hover{filter:brightness(1.15)}
+  video{width:100%;max-width:460px;background:#000;border-radius:10px;display:block}
+  .row{display:flex;gap:18px;flex-wrap:wrap} .row>div{flex:1;min-width:280px}
+  pre{background:#16151f;border-radius:10px;padding:12px;font-size:12.5px;white-space:pre-wrap;min-height:40px;margin:10px 0 0}
+  .meter{height:10px;background:#16151f;border-radius:6px;overflow:hidden;margin:8px 0;max-width:460px}
+  .meter i{display:block;height:100%;width:0;background:linear-gradient(90deg,#a78bfa,#6ee7f9)}
+  label{margin-right:12px}
+</style></head><body>
+<h1>JADON · DIAGNOSE</h1>
+<div class="muted" id="env"></div>
+<div class="muted">Qt-Bindung: {{BINDING}}</div>
+
+<section>
+  <h2>Video-Codecs (Twitch, YouTube-Livestreams …)</h2>
+  <pre id="codecs"></pre>
+</section>
+
+<section>
+  <h2>Bildschirmfreigabe</h2>
+  <label><input type="checkbox" id="aud"> Systemton anfordern</label><br><br>
+  <button id="shareBtn">Bildschirm teilen</button><button class="g" id="stopBtn">Stopp</button>
+  <div class="row">
+    <div><div class="muted">Dein Bildschirm (Vorschau)</div><video id="vLocal" autoplay muted playsinline></video></div>
+    <div><div class="muted">So kommt es bei Freunden an (lokaler Sendetest)</div><video id="vRemote" autoplay muted playsinline></video></div>
+  </div>
+  <pre id="log1">Noch nichts getestet.</pre>
+</section>
+
+<section>
+  <h2>Mikrofon &amp; Kamera</h2>
+  <button id="micBtn">Mikrofon testen</button><button id="camBtn">Kamera testen</button>
+  <div class="meter"><i id="lvl"></i></div>
+  <video id="vCam" autoplay muted playsinline></video>
+  <pre id="log2">Noch nichts getestet.</pre>
+</section>
+
+<script>
+const $ = id => document.getElementById(id);
+const out = (el, m) => { el.textContent += m + "\n"; };
+$("env").textContent = navigator.userAgent;
+(function () {
+  const v = document.createElement("video");
+  const tests = {
+    "H.264 (Video)": 'video/mp4; codecs="avc1.42E01E"',
+    "AAC (Audio)": 'audio/mp4; codecs="mp4a.40.2"',
+    "VP9": 'video/webm; codecs="vp9"',
+    "AV1": 'video/mp4; codecs="av01.0.05M.08"',
+    "Opus": 'audio/webm; codecs="opus"'
+  };
+  let txt = "", h264 = false;
+  for (const k in tests) {
+    const ok = v.canPlayType(tests[k]) !== "";
+    if (k.startsWith("H.264")) h264 = ok;
+    txt += (ok ? "✔ " : "✘ ") + k + "\n";
+  }
+  if (!h264) txt += "\nH.264 fehlt: Twitch zeigt „Fehler #4000“. Starte Jadon mit PyQt6 (siehe README).";
+  $("codecs").textContent = txt;
+})();
+let stream = null, pcA = null, pcB = null;
+
+function stopShare() {
+  if (stream) stream.getTracks().forEach(t => t.stop());
+  if (pcA) pcA.close(); if (pcB) pcB.close();
+  stream = pcA = pcB = null;
+  $("vLocal").srcObject = null; $("vRemote").srcObject = null;
+}
+
+async function loopback(s) {
+  pcA = new RTCPeerConnection(); pcB = new RTCPeerConnection();
+  pcA.onicecandidate = e => e.candidate && pcB.addIceCandidate(e.candidate);
+  pcB.onicecandidate = e => e.candidate && pcA.addIceCandidate(e.candidate);
+  pcB.ontrack = e => { $("vRemote").srcObject = e.streams[0]; };
+  pcA.onconnectionstatechange = () => out($("log1"), "Verbindung: " + pcA.connectionState);
+  s.getTracks().forEach(t => pcA.addTrack(t, s));
+  const offer = await pcA.createOffer();
+  await pcA.setLocalDescription(offer); await pcB.setRemoteDescription(offer);
+  const answer = await pcB.createAnswer();
+  await pcB.setLocalDescription(answer); await pcA.setRemoteDescription(answer);
+  setTimeout(async () => {
+    if (!pcA) return;
+    const stats = await pcA.getStats();
+    let found = false;
+    stats.forEach(r => {
+      if (r.type === "outbound-rtp" && r.kind === "video") {
+        found = true;
+        out($("log1"), "Gesendet: " + r.bytesSent + " Bytes, " + (r.frameWidth || "?") + "x" + (r.frameHeight || "?") +
+          (r.bytesSent > 0 ? "  → OK, es wird Bild übertragen." : "  → es wird KEIN Bild übertragen!"));
+      }
+    });
+    if (!found) out($("log1"), "Keine Video-Statistik gefunden.");
+  }, 3000);
+}
+
+$("shareBtn").onclick = async () => {
+  stopShare(); $("log1").textContent = "";
+  try {
+    stream = await navigator.mediaDevices.getDisplayMedia({ video: { frameRate: 30 }, audio: $("aud").checked });
+    $("vLocal").srcObject = stream;
+    stream.getTracks().forEach(t => {
+      out($("log1"), t.kind + ": " + t.label + " " + JSON.stringify(t.getSettings()));
+      t.onended = () => out($("log1"), t.kind + "-Spur beendet");
+    });
+    if ($("aud").checked && stream.getAudioTracks().length === 0)
+      out($("log1"), "Hinweis: Es ist kein Systemton im Stream (bei Windows nur mit „Gesamter Bildschirm“).");
+    await loopback(stream);
+  } catch (e) {
+    out($("log1"), "Fehler: " + e.name + " – " + e.message);
+  }
+};
+$("stopBtn").onclick = stopShare;
+
+$("micBtn").onclick = async () => {
+  $("log2").textContent = "";
+  try {
+    const s = await navigator.mediaDevices.getUserMedia({ audio: true });
+    out($("log2"), "Mikrofon: " + s.getAudioTracks()[0].label + " – sprich etwas, der Balken sollte ausschlagen.");
+    const ctx = new AudioContext(), an = ctx.createAnalyser(), data = new Uint8Array(an.fftSize);
+    ctx.createMediaStreamSource(s).connect(an);
+    (function tick() {
+      an.getByteTimeDomainData(data);
+      let peak = 0; for (const v of data) peak = Math.max(peak, Math.abs(v - 128));
+      $("lvl").style.width = Math.min(100, peak * 2.2) + "%";
+      requestAnimationFrame(tick);
+    })();
+  } catch (e) { out($("log2"), "Fehler: " + e.name + " – " + e.message); }
+};
+$("camBtn").onclick = async () => {
+  try {
+    const s = await navigator.mediaDevices.getUserMedia({ video: true });
+    $("vCam").srcObject = s;
+    out($("log2"), "Kamera: " + s.getVideoTracks()[0].label);
+  } catch (e) { out($("log2"), "Fehler: " + e.name + " – " + e.message); }
+};
+</script></body></html>
 """
 
 STYLE = """
@@ -125,6 +288,14 @@ QMenu::separator { height:1px; background:#34324a; margin:5px 8px; }
 # Hilfsfunktionen
 # ----------------------------------------------------------------------------
 TRAY = {"icon": None, "last_note": None}
+
+
+def add_action(menu, text, fn):
+    """Menüeintrag, der mit PyQt6 und PySide6 gleich funktioniert."""
+    act = QAction(text, menu)
+    act.triggered.connect(fn)
+    menu.addAction(act)
+    return act
 
 
 def load_json(path, default):
@@ -442,26 +613,27 @@ class Jadon(QMainWindow):
 
     def _build_menu(self):
         m = QMenu(self)
-        m.addAction("Neuer Tab\tStrg+T", lambda: self.new_tab())
-        m.addAction("Neues Fenster\tStrg+N", lambda: self.new_window())
-        m.addAction("Privates Fenster\tStrg+Shift+N", lambda: self.new_window(True))
+        add_action(m, "Neuer Tab\tStrg+T", lambda: self.new_tab())
+        add_action(m, "Neues Fenster\tStrg+N", lambda: self.new_window())
+        add_action(m, "Privates Fenster\tStrg+Shift+N", lambda: self.new_window(True))
         m.addSeparator()
         self.menu_bookmarks = m.addMenu("Lesezeichen")
         self.menu_bookmarks.aboutToShow.connect(self._fill_bookmarks)
         self.menu_history = m.addMenu("Verlauf")
         self.menu_history.aboutToShow.connect(self._fill_history)
         m.addSeparator()
-        m.addAction("Auf Seite suchen\tStrg+F", lambda: self.show_find())
-        m.addAction("Drucken …\tStrg+P", lambda: self.print_page())
-        m.addAction("Als PDF speichern …", lambda: self.save_pdf())
+        add_action(m, "Auf Seite suchen\tStrg+F", lambda: self.show_find())
+        add_action(m, "Drucken …\tStrg+P", lambda: self.print_page())
+        add_action(m, "Als PDF speichern …", lambda: self.save_pdf())
         m.addSeparator()
-        m.addAction("Vergrößern\tStrg++", lambda: self._zoom(+0.1))
-        m.addAction("Verkleinern\tStrg+-", lambda: self._zoom(-0.1))
-        m.addAction("Zoom zurücksetzen\tStrg+0", lambda: self.view().setZoomFactor(1.0))
-        m.addAction("Vollbild\tF11", lambda: self.set_fullscreen(not self.isFullScreen()))
-        m.addAction("Entwicklertools\tF12", lambda: self.dev_tools())
+        add_action(m, "Vergrößern\tStrg++", lambda: self._zoom(+0.1))
+        add_action(m, "Verkleinern\tStrg+-", lambda: self._zoom(-0.1))
+        add_action(m, "Zoom zurücksetzen\tStrg+0", lambda: self.view().setZoomFactor(1.0))
+        add_action(m, "Vollbild\tF11", lambda: self.set_fullscreen(not self.isFullScreen()))
+        add_action(m, "Entwicklertools\tF12", lambda: self.dev_tools())
+        add_action(m, "Bildschirm-/Mikrofon-Diagnose", lambda: self.open_test())
         m.addSeparator()
-        m.addAction("Beenden", lambda: QApplication.closeAllWindows())
+        add_action(m, "Beenden", lambda: QApplication.closeAllWindows())
         return m
 
     def _shortcuts(self):
@@ -630,7 +802,7 @@ class Jadon(QMainWindow):
         if not self.bookmarks:
             m.addAction("(keine Lesezeichen)").setEnabled(False)
         for b in self.bookmarks:
-            m.addAction(b["title"][:60], self._opener(b["url"]))
+            add_action(m, b["title"][:60], self._opener(b["url"]))
 
     def _fill_history(self):
         m = self.menu_history
@@ -639,10 +811,10 @@ class Jadon(QMainWindow):
         if not hist:
             m.addAction("(leer)").setEnabled(False)
         for h in reversed(hist[-25:]):
-            m.addAction(h["title"][:60], self._opener(h["url"]))
+            add_action(m, h["title"][:60], self._opener(h["url"]))
         if hist:
             m.addSeparator()
-            m.addAction("Verlauf löschen", lambda: save_json(HISTORY_FILE, []))
+            add_action(m, "Verlauf löschen", lambda: save_json(HISTORY_FILE, []))
 
     # ---------- Suche auf Seite, Druck, DevTools ----------
     def show_find(self):
@@ -671,6 +843,10 @@ class Jadon(QMainWindow):
         path, _ = QFileDialog.getSaveFileName(self, "Als PDF speichern", "seite.pdf", "PDF (*.pdf)")
         if path:
             self.view().printToPdf(path)
+
+    def open_test(self):
+        tab = self.new_tab(None)
+        tab.view.setHtml(TEST_PAGE.replace("{{BINDING}}", BINDING), QUrl(f"https://{START_HOST}/diagnose"))
 
     def dev_tools(self):
         page = self.view().page()
@@ -758,6 +934,9 @@ class Jadon(QMainWindow):
 
 
 def main():
+    if BINDING == "PySide6":
+        print("Hinweis: PySide6 spielt kein H.264/AAC ab (Twitch, YouTube-Livestreams). "
+              "Installiere für volle Video-Unterstützung: pip install PyQt6 PyQt6-WebEngine")
     QCoreApplication.setAttribute(Qt.ApplicationAttribute.AA_ShareOpenGLContexts)
     app = QApplication(sys.argv)
     app.setApplicationName(APP_NAME)
