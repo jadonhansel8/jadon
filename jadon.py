@@ -16,7 +16,15 @@ from pathlib import Path
 from urllib.parse import quote_plus
 
 # Chromium-Flags müssen gesetzt werden, bevor Qt startet.
-_flags = []
+_flags = [
+    # Beim Teilen ist das Jadon-Fenster oft verdeckt oder minimiert. Ohne diese Flags drosselt Chromium
+    # Hintergrund-Seiten, und Anrufe/Streams können ruckeln oder einfrieren.
+    "--disable-renderer-backgrounding",
+    "--disable-background-timer-throttling",
+    "--disable-backgrounding-occluded-windows",
+]
+if sys.platform.startswith("win"):
+    _flags.append("--disable-features=CalculateNativeWinOcclusion")
 if sys.platform.startswith("linux"):
     _flags.append("--enable-features=WebRTCPipeWireCapturer")  # Bildschirmfreigabe unter Wayland
 if _flags:
@@ -694,6 +702,13 @@ class Jadon(QMainWindow):
         dlg.resize(520, 380)
         lay = QVBoxLayout(dlg)
         lay.addWidget(QLabel("Wähle, was du teilen möchtest:"))
+        if sys.platform.startswith("win"):
+            audio_hint = "Systemton wird mitgeteilt, wenn die Seite ihn anfordert (nur bei „Gesamter Bildschirm“)."
+        else:
+            audio_hint = "Hinweis: Systemton kann auf diesem System nicht mitgeteilt werden – nur Bild."
+        hint = QLabel(audio_hint)
+        hint.setWordWrap(True)
+        hint.setStyleSheet("color:#9d9bb5;font-size:12px;")
         tabs = QTabWidget()
         screens = QListView()
         screens.setModel(screens_model)
@@ -702,6 +717,7 @@ class Jadon(QMainWindow):
         tabs.addTab(screens, "Gesamter Bildschirm")
         tabs.addTab(windows, "Fenster")
         lay.addWidget(tabs)
+        lay.addWidget(hint)
         if screens_model.rowCount() > 0:
             screens.setCurrentIndex(screens_model.index(0, 0))
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
@@ -713,9 +729,11 @@ class Jadon(QMainWindow):
 
         if dlg.exec() == QDialog.DialogCode.Accepted:
             if tabs.currentIndex() == 0 and screens.currentIndex().isValid():
+                notify("Bildschirmfreigabe", f"Du teilst jetzt: {screens.currentIndex().data()}")
                 request.selectScreen(screens.currentIndex())
                 return
             if tabs.currentIndex() == 1 and windows.currentIndex().isValid():
+                notify("Bildschirmfreigabe", f"Du teilst jetzt: {windows.currentIndex().data()}")
                 request.selectWindow(windows.currentIndex())
                 return
         request.cancel()

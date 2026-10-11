@@ -119,6 +119,19 @@ Je nach Betriebssystem musst du zusätzlich etwas freigeben:
 Zum Ausprobieren eignen sich zum Beispiel <https://meet.jit.si> (Anruf, Mikrofon, Kamera,
 Bildschirm) oder <https://webcamtests.com> / <https://mictests.com>.
 
+### Was bei der Bildschirmfreigabe mitgeteilt wird
+
+| Was                          | Windows | macOS | Linux |
+|------------------------------|:-------:|:-----:|:-----:|
+| Bild (Bildschirm / Fenster)  | ja      | ja    | ja (Wayland: PipeWire nötig) |
+| Systemton                    | ja, nur bei „Gesamter Bildschirm“ | nein | nein |
+| Mauszeiger                   | ja      | ja    | ja    |
+
+Der Systemton wird nur übertragen, wenn die Seite ihn anfordert (z. B. beim Haken „Audio teilen“
+in Meet oder Discord). Dein **Mikrofon** ist davon getrennt und wird in der Anruf-Seite selbst gewählt.
+Jadon verhindert außerdem, dass Chromium den Stream drosselt, wenn das Fenster verdeckt oder
+minimiert ist.
+
 ## Bekannte Grenzen
 
 - **DRM-Streaming** (Netflix, Disney+, Prime Video in HD) braucht das Widevine-Modul, das Qt
