@@ -17,8 +17,9 @@ aber auch nicht. Deshalb gilt: Prüfe, bevor du vertraust.
    ```
    Linux/macOS: `sha256sum Jadon-linux-x64.tar.gz` bzw. `shasum -a 256 Jadon-macos-arm64.zip`
 
-2. **Herkunft prüfen.** Die Pakete werden von GitHub Actions gebaut und mit einem Herkunftsnachweis
-   versehen. Mit der [GitHub CLI](https://cli.github.com/) kannst du bestätigen, dass die Datei aus
+2. **Herkunft prüfen.** Die Pakete werden von GitHub Actions gebaut und – sobald das Repository
+   **öffentlich** ist – mit einem Herkunftsnachweis versehen (bei privaten Repositories bietet GitHub
+   das nicht an, dort entfällt dieser Schritt). Mit der [GitHub CLI](https://cli.github.com/) kannst du bestätigen, dass die Datei aus
    diesem Repository stammt:
 
    ```bash

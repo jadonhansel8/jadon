@@ -1,0 +1,140 @@
+name: Build Jadon
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]          # z. B. git tag v1.0.0 && git push --tags  -> erstellt ein Release
+  pull_request:
+  workflow_dispatch:      # manuell über den Actions-Tab startbar
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build (${{ matrix.name }})
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read
+      id-token: write       # für Build-Herkunftsnachweis (Attestation)
+      attestations: write
+    env:
+      WINDOWS_CERT_BASE64: ${{ secrets.WINDOWS_CERT_BASE64 }}
+      WINDOWS_CERT_PASSWORD: ${{ secrets.WINDOWS_CERT_PASSWORD }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: windows
+            os: windows-latest
+            artifact: Jadon-windows-x64.zip
+            extra: --version-file version_info.txt
+          - name: macos
+            os: macos-latest        # Apple Silicon (arm64)
+            artifact: Jadon-macos-arm64.zip
+            extra: ""
+          - name: linux
+            os: ubuntu-22.04
+            artifact: Jadon-linux-x64.tar.gz
+            extra: ""
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Linux-Bibliotheken für Qt WebEngine installieren
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libegl1 libgl1 libglib2.0-0 libdbus-1-3 libfontconfig1 libnss3 libnspr4 \
+            libxkbcommon0 libxkbcommon-x11-0 libxkbfile1 libxcb-cursor0 libxcb-icccm4 \
+            libxcb-image0 libxcb-keysyms1 libxcb-randr0 libxcb-render-util0 \
+            libxcb-shape0 libxcb-xinerama0 libxcb-xkb1 libxcomposite1 libxdamage1 \
+            libxfixes3 libxrandr2 libxtst6 libxi6 libxrender1 libasound2 libpulse0 \
+            libcups2 libatk1.0-0 libatk-bridge2.0-0 libgbm1 libdrm2
+
+      - name: Abhängigkeiten installieren
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt pyinstaller
+
+      - name: Syntax prüfen
+        run: python -m py_compile jadon.py
+
+      - name: Mit PyInstaller bauen
+        run: pyinstaller --noconfirm --clean --noupx --windowed --name Jadon ${{ matrix.extra }} jadon.py
+
+      # Optional: Windows-Codesignatur. Nur aktiv, wenn die Secrets WINDOWS_CERT_BASE64 (PFX, base64)
+      # und WINDOWS_CERT_PASSWORD im Repository hinterlegt sind.
+      - name: Windows – Code-Signing (optional)
+        if: runner.os == 'Windows' && env.WINDOWS_CERT_BASE64 != ''
+        shell: pwsh
+        run: |
+          [IO.File]::WriteAllBytes("cert.pfx", [Convert]::FromBase64String($env:WINDOWS_CERT_BASE64))
+          $signtool = Get-ChildItem "C:\Program Files (x86)\Windows Kits\10\bin\*\x64\signtool.exe" |
+            Sort-Object FullName -Descending | Select-Object -First 1
+          & $signtool.FullName sign /f cert.pfx /p $env:WINDOWS_CERT_PASSWORD /fd SHA256 `
+            /tr http://timestamp.digicert.com /td SHA256 dist\Jadon\Jadon.exe
+          Remove-Item cert.pfx
+
+      # macOS braucht Texte für Mikrofon/Kamera, sonst fragt das System nie nach Erlaubnis.
+      - name: macOS – Berechtigungen eintragen und signieren
+        if: runner.os == 'macOS'
+        run: |
+          PLIST="dist/Jadon.app/Contents/Info.plist"
+          /usr/libexec/PlistBuddy -c "Add :NSMicrophoneUsageDescription string Jadon braucht das Mikrofon für Anrufe und Aufnahmen." "$PLIST"
+          /usr/libexec/PlistBuddy -c "Add :NSCameraUsageDescription string Jadon braucht die Kamera für Videoanrufe." "$PLIST"
+          codesign --force --deep --sign - dist/Jadon.app
+
+      - name: Paket erstellen (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: Compress-Archive -Path dist/Jadon -DestinationPath "${{ matrix.artifact }}"
+
+      - name: Paket erstellen (macOS)
+        if: runner.os == 'macOS'
+        run: ditto -c -k --keepParent dist/Jadon.app "${{ matrix.artifact }}"
+
+      - name: Paket erstellen (Linux)
+        if: runner.os == 'Linux'
+        run: tar -czf "${{ matrix.artifact }}" -C dist Jadon
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: ${{ matrix.artifact }}
+          if-no-files-found: error
+
+      # Herkunftsnachweise gibt es bei GitHub nur für öffentliche Repositories (oder Enterprise).
+      # In privaten Repos wird der Schritt übersprungen, statt den Build scheitern zu lassen.
+      - name: Herkunftsnachweis erstellen
+        if: github.event_name != 'pull_request' && github.event.repository.private == false
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: ${{ matrix.artifact }}
+
+  release:
+    name: GitHub-Release erstellen
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: SHA-256-Prüfsummen erzeugen
+        run: cd dist && sha256sum * > SHA256SUMS.txt && cat SHA256SUMS.txt
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          generate_release_notes: true
