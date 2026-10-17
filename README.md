@@ -80,6 +80,15 @@ Du kannst auch direkt Adressen übergeben:
 python jadon.py https://example.com
 ```
 
+### Windows: Start ohne `.exe` (z. B. bei Smart App Control)
+
+Smart App Control blockiert unsignierte Programme wie die mit PyInstaller gebaute `Jadon.exe`.
+Mit **`Jadon-starten.bat`** (Doppelklick) läuft Jadon stattdessen über das installierte Python – dafür ist
+keine `.exe` nötig. Beim ersten Start richtet die Datei automatisch eine Umgebung ein und installiert
+die Abhängigkeiten. Voraussetzung ist ein installiertes Python (<https://www.python.org/downloads/>, beim Setup
+„Add python.exe to PATH“ ankreuzen). Für eine Desktop-Verknüpfung: Rechtsklick auf die Datei →
+*Senden an → Desktop (Verknüpfung erstellen)*.
+
 ## Tastenkürzel
 
 | Kürzel                  | Aktion                  |
