@@ -22,6 +22,8 @@ _flags = [
     "--disable-renderer-backgrounding",
     "--disable-background-timer-throttling",
     "--disable-backgrounding-occluded-windows",
+    # Videos (TikTok, Reels, Shorts ...) dürfen ohne Klick starten, auch in eingebetteten Frames.
+    "--autoplay-policy=no-user-gesture-required",
 ]
 if sys.platform.startswith("win"):
     _flags.append("--disable-features=CalculateNativeWinOcclusion")
@@ -41,7 +43,10 @@ try:
         QLinearGradient, QPainter, QPixmap, QShortcut,
     )
     from PyQt6.QtPrintSupport import QPrintDialog, QPrinter
-    from PyQt6.QtWebEngineCore import QWebEnginePage, QWebEngineProfile, QWebEngineSettings
+    from PyQt6.QtWebEngineCore import (
+        QWebEnginePage, QWebEngineProfile, QWebEngineScript, QWebEngineSettings,
+        QWebEngineUrlRequestInterceptor,
+    )
     from PyQt6.QtWebEngineWidgets import QWebEngineView
     from PyQt6.QtWidgets import (
         QApplication, QDialog, QDialogButtonBox, QFileDialog, QFormLayout, QHBoxLayout,
@@ -56,7 +61,10 @@ except ImportError:
         QLinearGradient, QPainter, QPixmap, QShortcut,
     )
     from PySide6.QtPrintSupport import QPrintDialog, QPrinter
-    from PySide6.QtWebEngineCore import QWebEnginePage, QWebEngineProfile, QWebEngineSettings
+    from PySide6.QtWebEngineCore import (
+        QWebEnginePage, QWebEngineProfile, QWebEngineScript, QWebEngineSettings,
+        QWebEngineUrlRequestInterceptor,
+    )
     from PySide6.QtWebEngineWidgets import QWebEngineView
     from PySide6.QtWidgets import (
         QApplication, QDialog, QDialogButtonBox, QFileDialog, QFormLayout, QHBoxLayout,
@@ -126,6 +134,11 @@ TEST_PAGE = r"""
 </section>
 
 <section>
+  <h2>Browser-Kennung (TikTok &amp; Co.)</h2>
+  <pre id="ident"></pre>
+</section>
+
+<section>
   <h2>Bildschirmfreigabe</h2>
   <label><input type="checkbox" id="aud"> Systemton anfordern</label><br><br>
   <button id="shareBtn">Bildschirm teilen</button><button class="g" id="stopBtn">Stopp</button>
@@ -165,6 +178,16 @@ $("env").textContent = navigator.userAgent;
   }
   if (!h264) txt += "\nH.264 fehlt: Twitch zeigt „Fehler #4000“. Starte Jadon mit PyQt6 (siehe README).";
   $("codecs").textContent = txt;
+})();
+(function () {
+  const u = navigator.userAgentData;
+  const ms = window.MediaSource;
+  let t = "User-Agent: " + navigator.userAgent + "\n";
+  t += "Client-Hints-Marken: " + (u ? u.brands.map(b => b.brand + " " + b.version).join(", ") : "nicht vorhanden") + "\n";
+  t += "window.chrome: " + (window.chrome ? "vorhanden" : "FEHLT") + "\n";
+  t += "navigator.webdriver: " + navigator.webdriver + "\n";
+  t += "MSE H.264 + AAC: " + (ms && ms.isTypeSupported('video/mp4; codecs="avc1.42E01E, mp4a.40.2"') ? "ja" : "NEIN") + "\n";
+  $("ident").textContent = t;
 })();
 let stream = null, pcA = null, pcB = null;
 
@@ -379,10 +402,107 @@ def on_notification(note):
     notify(note.title(), note.message())
 
 
+# TikTok & Co. prüfen nicht nur den User-Agent, sondern auch die „Client Hints“ (Sec-CH-UA bzw.
+# navigator.userAgentData) und ob `window.chrome` existiert. Qt WebEngine meldet dort nur „Chromium“
+# und kein „Google Chrome“ – das sieht für die Seiten nach einem eingebetteten Browser aus, und sie
+# zeigen dann „Browser wird nicht unterstützt“, Verifizierungsschleifen oder spielen keine Videos ab.
+# Dieses Skript läuft vor jeder Seite und macht die Angaben so, wie sie ein normaler Chrome liefert.
+COMPAT_JS = r"""
+(function () {
+  try {
+    var major = "__CHROME_MAJOR__", full = major + ".0.0.0";
+    var brands = function () { return [
+      { brand: "Not)A;Brand", version: "8" },
+      { brand: "Chromium", version: major },
+      { brand: "Google Chrome", version: major }
+    ]; };
+    var fullBrands = function () { return [
+      { brand: "Not)A;Brand", version: "8.0.0.0" },
+      { brand: "Chromium", version: full },
+      { brand: "Google Chrome", version: full }
+    ]; };
+    var uad = navigator.userAgentData;
+    if (uad) {
+      var has = false;
+      for (var i = 0; i < uad.brands.length; i++) {
+        if (uad.brands[i].brand === "Google Chrome") has = true;
+      }
+      if (!has) {
+        var proto = Object.getPrototypeOf(uad);
+        Object.defineProperty(proto, "brands", {
+          get: function () { return brands(); }, configurable: true, enumerable: true
+        });
+        var origHigh = proto.getHighEntropyValues;
+        if (origHigh) {
+          proto.getHighEntropyValues = function (hints) {
+            return origHigh.call(this, hints).then(function (v) {
+              if (v && v.brands) v.brands = brands();
+              if (v && v.fullVersionList) v.fullVersionList = fullBrands();
+              return v;
+            });
+          };
+        }
+        var origJson = proto.toJSON;
+        if (origJson) {
+          proto.toJSON = function () {
+            var o = origJson.call(this);
+            o.brands = brands();
+            return o;
+          };
+        }
+      }
+    }
+    if (!window.chrome) {
+      window.chrome = {
+        app: { isInstalled: false },
+        csi: function () { return {}; },
+        loadTimes: function () { return {}; }
+      };
+    }
+  } catch (e) {}
+})();
+"""
+
+
+class ClientHintsFixer(QWebEngineUrlRequestInterceptor):
+    """Schickt in den HTTP-Headern dieselbe Marke („Google Chrome“), die die Seite per JavaScript sieht."""
+
+    def __init__(self, major, parent=None):
+        super().__init__(parent)
+        self.value = (
+            f'"Not)A;Brand";v="8", "Chromium";v="{major}", "Google Chrome";v="{major}"'
+        ).encode("ascii")
+
+    def interceptRequest(self, info):
+        try:
+            if info.requestUrl().scheme() == "https":
+                info.setHttpHeader(b"sec-ch-ua", self.value)
+        except Exception:
+            pass
+
+
+def install_chrome_compat(profile, major):
+    try:
+        script = QWebEngineScript()
+        script.setName("jadon-chrome-compat")
+        script.setSourceCode(COMPAT_JS.replace("__CHROME_MAJOR__", str(major)))
+        script.setInjectionPoint(QWebEngineScript.InjectionPoint.DocumentCreation)
+        script.setWorldId(QWebEngineScript.ScriptWorldId.MainWorld)
+        script.setRunsOnSubFrames(True)
+        profile.scripts().insert(script)
+        fixer = ClientHintsFixer(major, profile)
+        profile.setUrlRequestInterceptor(fixer)
+        profile._jadon_hints = fixer  # Referenz behalten, sonst räumt Python das Objekt weg
+    except Exception as exc:
+        print("Hinweis: Chrome-Kompatibilität konnte nicht aktiviert werden:", exc)
+
+
 def configure_profile(profile, private=False):
     """Alles, was ein 'normaler' Browser kann: WebRTC, Mikrofon, Kamera, Screen-Sharing, Clipboard ..."""
     ua = re.sub(r"\s*QtWebEngine/[\d.]+", "", profile.httpUserAgent())  # sieht aus wie Chrome → bessere Kompatibilität
     profile.setHttpUserAgent(ua)
+    match = re.search(r"Chrome/(\d+)", ua)
+    install_chrome_compat(profile, match.group(1) if match else "130")
     profile.setHttpAcceptLanguage(QLocale.system().name().replace("_", "-") + ",en;q=0.8")
     if not private:
         profile.setPersistentCookiesPolicy(QWebEngineProfile.PersistentCookiesPolicy.ForcePersistentCookies)
