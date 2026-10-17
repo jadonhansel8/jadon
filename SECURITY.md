@@ -23,7 +23,7 @@ aber auch nicht. Deshalb gilt: Prüfe, bevor du vertraust.
    diesem Repository stammt:
 
    ```bash
-   gh attestation verify Jadon-windows-x64.zip --repo DEIN-NAME/jadon
+   gh attestation verify Jadon-windows-x64.zip --repo jadonhansel8/jadon
    ```
 
 3. **Selbst bauen.** Der gesamte Quellcode ist eine einzige lesbare Datei (`jadon.py`).

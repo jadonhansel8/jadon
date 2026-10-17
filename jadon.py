@@ -37,48 +37,62 @@ if _flags:
 # PyQt6 wird bevorzugt: Dessen Qt-WebEngine-Pakete spielen H.264/AAC ab (Twitch, YouTube-Livestreams ...).
 # Die PySide6-Pakete enthalten diese Codecs nicht (Twitch zeigt dann „Fehler #4000“).
 try:
-    from PyQt6.QtCore import QCoreApplication, QLocale, Qt, QUrl
+    from PyQt6.QtCore import QCoreApplication, QLocale, QStandardPaths, QStringListModel, Qt, QTimer, QUrl
     from PyQt6.QtGui import (
         QAction, QBrush, QColor, QDesktopServices, QFont, QIcon, QKeySequence,
         QLinearGradient, QPainter, QPixmap, QShortcut,
     )
     from PyQt6.QtPrintSupport import QPrintDialog, QPrinter
     from PyQt6.QtWebEngineCore import (
-        QWebEnginePage, QWebEngineProfile, QWebEngineScript, QWebEngineSettings,
+        QWebEngineDownloadRequest, QWebEnginePage, QWebEngineProfile, QWebEngineScript,
+        QWebEngineSettings,
         QWebEngineUrlRequestInterceptor,
     )
     from PyQt6.QtWebEngineWidgets import QWebEngineView
     from PyQt6.QtWidgets import (
-        QApplication, QDialog, QDialogButtonBox, QFileDialog, QFormLayout, QHBoxLayout,
-        QLabel, QLineEdit, QListView, QMainWindow, QMenu, QMessageBox, QProgressBar,
+        QApplication, QCheckBox, QComboBox, QCompleter, QDialog, QDialogButtonBox, QFileDialog,
+        QFormLayout, QHBoxLayout,
+        QLabel, QLineEdit, QListView, QListWidget, QListWidgetItem, QMainWindow, QMenu, QMessageBox,
+        QProgressBar, QPushButton,
         QStackedWidget, QSystemTrayIcon, QTabBar, QTabWidget, QToolButton, QVBoxLayout, QWidget,
     )
     BINDING = "PyQt6"
 except ImportError:
-    from PySide6.QtCore import QCoreApplication, QLocale, Qt, QUrl
+    from PySide6.QtCore import QCoreApplication, QLocale, QStandardPaths, QStringListModel, Qt, QTimer, QUrl
     from PySide6.QtGui import (
         QAction, QBrush, QColor, QDesktopServices, QFont, QIcon, QKeySequence,
         QLinearGradient, QPainter, QPixmap, QShortcut,
     )
     from PySide6.QtPrintSupport import QPrintDialog, QPrinter
     from PySide6.QtWebEngineCore import (
-        QWebEnginePage, QWebEngineProfile, QWebEngineScript, QWebEngineSettings,
+        QWebEngineDownloadRequest, QWebEnginePage, QWebEngineProfile, QWebEngineScript,
+        QWebEngineSettings,
         QWebEngineUrlRequestInterceptor,
     )
     from PySide6.QtWebEngineWidgets import QWebEngineView
     from PySide6.QtWidgets import (
-        QApplication, QDialog, QDialogButtonBox, QFileDialog, QFormLayout, QHBoxLayout,
-        QLabel, QLineEdit, QListView, QMainWindow, QMenu, QMessageBox, QProgressBar,
+        QApplication, QCheckBox, QComboBox, QCompleter, QDialog, QDialogButtonBox, QFileDialog,
+        QFormLayout, QHBoxLayout,
+        QLabel, QLineEdit, QListView, QListWidget, QListWidgetItem, QMainWindow, QMenu, QMessageBox,
+        QProgressBar, QPushButton,
         QStackedWidget, QSystemTrayIcon, QTabBar, QTabWidget, QToolButton, QVBoxLayout, QWidget,
     )
     BINDING = "PySide6"
 
 APP_NAME = "Jadon"
-SEARCH_URL = "https://duckduckgo.com/?q={}"
+SEARCH_ENGINES = {
+    "DuckDuckGo": "https://duckduckgo.com/?q={}",
+    "Google": "https://www.google.com/search?q={}",
+    "Bing": "https://www.bing.com/search?q={}",
+    "Brave": "https://search.brave.com/search?q={}",
+    "Ecosia": "https://www.ecosia.org/search?q={}",
+    "Startpage": "https://www.startpage.com/do/search?q={}",
+}
 START_HOST = "jadon.local"
 DATA_DIR = Path.home() / ".jadon"
 BOOKMARKS_FILE = DATA_DIR / "bookmarks.json"
 HISTORY_FILE = DATA_DIR / "history.json"
+SETTINGS_FILE = DATA_DIR / "settings.json"
 
 START_PAGE = """
 <!doctype html><html lang="de"><head><meta charset="utf-8"><title>Neuer Tab</title>
@@ -102,9 +116,17 @@ START_PAGE = """
   input::placeholder{color:rgba(255,255,255,.4)}
 </style></head><body>
   <h1>JADON</h1><p>Schnell · Schlicht · Dein</p>
-  <form action="https://duckduckgo.com/" method="get">
+  <form id="f">
     <input name="q" placeholder="Suchen oder Adresse eingeben …" autofocus autocomplete="off">
   </form>
+  <script>
+    var SEARCH = {{SEARCH}};
+    document.getElementById("f").addEventListener("submit", function (e) {
+      e.preventDefault();
+      var q = this.q.value.trim();
+      if (q) location.href = SEARCH.replace("{}", encodeURIComponent(q));
+    });
+  </script>
 </body></html>
 """
 
@@ -305,6 +327,10 @@ QMenu { background:#23222f; color:#e9e7f5; border:1px solid #34324a; padding:6px
 QMenu::item { padding:7px 28px 7px 18px; border-radius:6px; }
 QMenu::item:selected { background:#34324a; }
 QMenu::separator { height:1px; background:#34324a; margin:5px 8px; }
+QCheckBox { color:#f1efff; }
+QComboBox { background:#16151f; color:#f1efff; border:1px solid #34324a; border-radius:8px; padding:6px 12px; }
+QComboBox QAbstractItemView { background:#23222f; color:#f1efff; selection-background-color:#7c5cf0; }
+QToolTip { background:#23222f; color:#f1efff; border:1px solid #34324a; }
 """
 
 # ----------------------------------------------------------------------------
@@ -340,6 +366,40 @@ def save_json(path, data):
         pass
 
 
+DEFAULT_SETTINGS = {"search_engine": "DuckDuckGo", "homepage": "", "ask_download": False}
+SETTINGS = dict(DEFAULT_SETTINGS)
+
+
+def load_settings():
+    data = load_json(SETTINGS_FILE, {})
+    if isinstance(data, dict):
+        SETTINGS.update({k: v for k, v in data.items() if k in DEFAULT_SETTINGS})
+    if SETTINGS["search_engine"] not in SEARCH_ENGINES:
+        SETTINGS["search_engine"] = DEFAULT_SETTINGS["search_engine"]
+
+
+def search_url():
+    return SEARCH_ENGINES.get(SETTINGS["search_engine"], SEARCH_ENGINES["DuckDuckGo"])
+
+
+def resolve_input(text):
+    """Adressleisten-Eingabe -> URL oder Suche. Adressen ohne Schema werden mit https:// geöffnet."""
+    text = text.strip()
+    has_scheme = re.match(r"^[a-zA-Z][a-zA-Z0-9+.-]*://", text)
+    looks_like_url = (
+        has_scheme
+        or text.startswith(("localhost", "about:", "view-source:"))
+        or (" " not in text and ("." in text or ":" in text))
+    )
+    if not looks_like_url:
+        return QUrl(search_url().replace("{}", quote_plus(text)))
+    if has_scheme or text.startswith(("about:", "view-source:")):
+        return QUrl.fromUserInput(text)
+    host = re.split(r"[/:?#]", text, maxsplit=1)[0].lower()
+    local = host == "localhost" or host.endswith(".local") or re.fullmatch(r"[\d.]+", host)
+    return QUrl.fromUserInput(text if local else "https://" + text)
+
+
 def make_icon():
     pm = QPixmap(256, 256)
     pm.fill(Qt.GlobalColor.transparent)
@@ -372,6 +432,27 @@ RISKY_EXTENSIONS = {
 }
 
 
+DOWNLOADS = []
+
+
+def unique_path(directory, name):
+    base, ext = os.path.splitext(name)
+    path = os.path.join(directory, name)
+    n = 1
+    while os.path.exists(path):
+        path = os.path.join(directory, f"{base} ({n}){ext}")
+        n += 1
+    return path
+
+
+def _download_done(dl):
+    try:
+        if dl.state() == QWebEngineDownloadRequest.DownloadState.DownloadCompleted:
+            notify("Download abgeschlossen", dl.downloadFileName())
+    except RuntimeError:
+        pass
+
+
 def on_download(dl):
     name = dl.downloadFileName()
     if os.path.splitext(name)[1].lower() in RISKY_EXTENSIONS:
@@ -386,14 +467,24 @@ def on_download(dl):
         if answer != QMessageBox.StandardButton.Yes:
             dl.cancel()
             return
-    path, _ = QFileDialog.getSaveFileName(QApplication.activeWindow(), "Datei speichern", dl.downloadFileName())
-    if not path:
-        dl.cancel()
-        return
+    if SETTINGS.get("ask_download"):
+        path, _ = QFileDialog.getSaveFileName(QApplication.activeWindow(), "Datei speichern", name)
+        if not path:
+            dl.cancel()
+            return
+    else:
+        folder = QStandardPaths.writableLocation(QStandardPaths.StandardLocation.DownloadLocation) or str(Path.home())
+        try:
+            os.makedirs(folder, exist_ok=True)
+        except OSError:
+            pass
+        path = unique_path(folder, name)
     dl.setDownloadDirectory(os.path.dirname(path))
     dl.setDownloadFileName(os.path.basename(path))
-    dl.isFinishedChanged.connect(lambda d=dl: notify("Download abgeschlossen", d.downloadFileName()))
+    DOWNLOADS.append(dl)
+    dl.isFinishedChanged.connect(lambda d=dl: _download_done(d))
     dl.accept()
+    notify("Download gestartet", os.path.basename(path))
 
 
 def on_notification(note):
@@ -578,24 +669,47 @@ class WebView(QWebEngineView):
     def __init__(self, win, profile):
         super().__init__()
         self.win = win
+        self.is_popup = False
+        self._crashes = []
         page = Page(profile, self)
         self.setPage(page)
         page.fullScreenRequested.connect(self._fullscreen)
         page.permissionRequested.connect(win.on_permission)
         page.desktopMediaRequested.connect(win.on_desktop_media)
         page.authenticationRequired.connect(win.on_auth)
+        page.windowCloseRequested.connect(lambda: win.close_view(self))  # window.close() in Popups/OAuth
+        page.renderProcessTerminated.connect(self._crashed)
 
-    def createWindow(self, _type):  # Popups, target="_blank", OAuth-Fenster
-        return self.win.new_tab(None).view
+    def createWindow(self, wtype):  # Popups, target="_blank", OAuth-Fenster, Mittelklick
+        background = wtype == QWebEnginePage.WebWindowType.WebBrowserBackgroundTab
+        view = self.win.new_tab(None, activate=not background).view
+        view.is_popup = True
+        return view
 
     def _fullscreen(self, request):
         request.accept()
         self.win.set_fullscreen(request.toggleOn())
 
+    def _crashed(self, status, _code):
+        """Stürzt der Seitenprozess ab (z. B. bei schweren Seiten), wird die Seite neu geladen – max. 3x pro Minute."""
+        if status == QWebEnginePage.RenderProcessTerminationStatus.NormalTerminationStatus:
+            return
+        now = time.time()
+        self._crashes = [t for t in self._crashes if now - t < 60] + [now]
+        if len(self._crashes) <= 3:
+            QTimer.singleShot(300, self._reload_after_crash)
+
+    def _reload_after_crash(self):
+        try:
+            self.reload()
+        except RuntimeError:
+            pass
+
 
 class Tab(QWidget):
     def __init__(self, win, profile):
         super().__init__()
+        self.title = ""
         self.view = WebView(win, profile)
         lay = QVBoxLayout(self)
         lay.setContentsMargins(0, 0, 0, 0)
@@ -615,6 +729,169 @@ class TabBar(QTabBar):
 # ----------------------------------------------------------------------------
 # Hauptfenster
 # ----------------------------------------------------------------------------
+class DownloadsDialog(QDialog):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Downloads")
+        self.resize(620, 380)
+        lay = QVBoxLayout(self)
+        self.list = QListWidget()
+        lay.addWidget(self.list, 1)
+        row = QHBoxLayout()
+        for text, fn in (("Datei öffnen", self.open_file), ("Ordner zeigen", self.open_folder),
+                         ("Abbrechen", self.cancel_download), ("Liste leeren", self.clear)):
+            b = QPushButton(text)
+            b.clicked.connect(fn)
+            row.addWidget(b)
+        lay.addLayout(row)
+        self.timer = QTimer(self)
+        self.timer.timeout.connect(self.refresh)
+
+    def showEvent(self, e):
+        self.refresh()
+        self.timer.start(500)
+        super().showEvent(e)
+
+    def hideEvent(self, e):
+        self.timer.stop()
+        super().hideEvent(e)
+
+    @staticmethod
+    def _alive():
+        alive = []
+        for d in DOWNLOADS:
+            try:
+                d.downloadFileName()
+                alive.append(d)
+            except RuntimeError:  # Profil (privates Fenster) existiert nicht mehr
+                pass
+        DOWNLOADS[:] = alive
+        return alive
+
+    def refresh(self):
+        row = self.list.currentRow()
+        self.list.clear()
+        S = QWebEngineDownloadRequest.DownloadState
+        for d in self._alive():
+            st = d.state()
+            if st == S.DownloadCompleted:
+                info = "fertig"
+            elif st == S.DownloadCancelled:
+                info = "abgebrochen"
+            elif st == S.DownloadInterrupted:
+                info = "unterbrochen"
+            else:
+                got, total = d.receivedBytes(), d.totalBytes()
+                info = f"{got / 1048576:.1f} MB"
+                if total > 0:
+                    info += f" von {total / 1048576:.1f} MB ({int(got * 100 / total)} %)"
+            self.list.addItem(f"{d.downloadFileName()}  –  {info}")
+        if 0 <= row < self.list.count():
+            self.list.setCurrentRow(row)
+
+    def _current(self):
+        i, alive = self.list.currentRow(), self._alive()
+        return alive[i] if 0 <= i < len(alive) else None
+
+    def open_file(self, *_):
+        d = self._current()
+        if d is None or d.state() != QWebEngineDownloadRequest.DownloadState.DownloadCompleted:
+            return
+        if os.path.splitext(d.downloadFileName())[1].lower() in RISKY_EXTENSIONS:
+            QMessageBox.information(self, "Datei öffnen",
+                                    "Ausführbare Dateien öffnet Jadon aus Sicherheitsgründen nicht selbst.\n"
+                                    "Nutze „Ordner zeigen“ und prüfe die Datei vorher.")
+            return
+        QDesktopServices.openUrl(QUrl.fromLocalFile(os.path.join(d.downloadDirectory(), d.downloadFileName())))
+
+    def open_folder(self, *_):
+        d = self._current()
+        if d is not None:
+            QDesktopServices.openUrl(QUrl.fromLocalFile(d.downloadDirectory()))
+
+    def cancel_download(self, *_):
+        d = self._current()
+        if d is not None and not d.isFinished():
+            d.cancel()
+
+    def clear(self, *_):
+        DOWNLOADS.clear()
+        self.refresh()
+
+
+class HistoryDialog(QDialog):
+    def __init__(self, win):
+        super().__init__(win)
+        self.win = win
+        self.setWindowTitle("Verlauf")
+        self.resize(720, 460)
+        lay = QVBoxLayout(self)
+        self.filter = QLineEdit(placeholderText="Verlauf durchsuchen")
+        self.filter.textChanged.connect(self._apply)
+        self.list = QListWidget()
+        self.list.itemActivated.connect(self._open)
+        lay.addWidget(self.filter)
+        lay.addWidget(self.list, 1)
+        row = QHBoxLayout()
+        b_clear, b_close = QPushButton("Verlauf löschen"), QPushButton("Schließen")
+        b_clear.clicked.connect(self._clear)
+        b_close.clicked.connect(self.accept)
+        row.addWidget(b_clear)
+        row.addStretch()
+        row.addWidget(b_close)
+        lay.addLayout(row)
+        hist = [] if win.private else load_json(HISTORY_FILE, [])
+        for h in reversed(hist):
+            item = QListWidgetItem(f"{h.get('title', '')[:70]}  –  {h.get('url', '')}")
+            item.setData(Qt.ItemDataRole.UserRole, h.get("url", ""))
+            self.list.addItem(item)
+
+    def _apply(self, text):
+        t = text.lower()
+        for i in range(self.list.count()):
+            item = self.list.item(i)
+            item.setHidden(t not in item.text().lower())
+
+    def _open(self, item):
+        url = item.data(Qt.ItemDataRole.UserRole)
+        if url:
+            self.win.new_tab(url)
+            self.accept()
+
+    def _clear(self, *_):
+        save_json(HISTORY_FILE, [])
+        self.list.clear()
+        self.win._refresh_completer()
+
+
+class SettingsDialog(QDialog):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Einstellungen")
+        self.resize(460, 200)
+        form = QFormLayout(self)
+        self.engine = QComboBox()
+        self.engine.addItems(list(SEARCH_ENGINES))
+        self.engine.setCurrentText(SETTINGS["search_engine"])
+        self.home = QLineEdit(SETTINGS["homepage"])
+        self.home.setPlaceholderText("leer = Jadon-Startseite")
+        self.ask = QCheckBox("Vor jedem Download nach dem Speicherort fragen")
+        self.ask.setChecked(bool(SETTINGS["ask_download"]))
+        form.addRow("Suchmaschine", self.engine)
+        form.addRow("Startseite", self.home)
+        form.addRow(self.ask)
+        bb = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
+        bb.accepted.connect(self._save)
+        bb.rejected.connect(self.reject)
+        form.addRow(bb)
+
+    def _save(self):
+        SETTINGS.update(search_engine=self.engine.currentText(), homepage=self.home.text().strip(),
+                        ask_download=self.ask.isChecked())
+        save_json(SETTINGS_FILE, SETTINGS)
+        self.accept()
+
+
 PERMISSION_TEXT = {
     "MediaAudioCapture": "dein Mikrofon verwenden",
     "MediaVideoCapture": "deine Kamera verwenden",
@@ -646,6 +923,9 @@ class Jadon(QMainWindow):
 
         self.bookmarks = load_json(BOOKMARKS_FILE, [])
         self._printer = None
+        self.tabs = []
+        self.closed_tabs = []
+        self._dl_dialog = None
 
         root = QWidget(objectName="root")
         self.setCentralWidget(root)
@@ -654,10 +934,13 @@ class Jadon(QMainWindow):
         col.setSpacing(0)
 
         # Tableiste
-        self.tabbar = TabBar(tabsClosable=True, movable=False, expanding=False, drawBase=False)
+        self.tabbar = TabBar(tabsClosable=True, movable=True, expanding=False, drawBase=False)
         self.tabbar.setElideMode(Qt.TextElideMode.ElideRight)
         self.tabbar.tabCloseRequested.connect(self.close_tab)
         self.tabbar.currentChanged.connect(self._tab_changed)
+        self.tabbar.tabMoved.connect(self._tab_moved)
+        self.tabbar.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.tabbar.customContextMenuRequested.connect(self._tab_menu)
         self.stack = QStackedWidget()
         self.holder = QWidget()
         self.holder.setStyleSheet("background:#16151f;")
@@ -677,6 +960,14 @@ class Jadon(QMainWindow):
         self.btn_home = self._btn("⌂", "Startseite", lambda: self.home())
         self.urlbar = QLineEdit(placeholderText="Suchen oder Adresse eingeben")
         self.urlbar.returnPressed.connect(self._navigate)
+        self.completer_model = QStringListModel(self)
+        self.completer = QCompleter(self.completer_model, self)
+        self.completer.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
+        self.completer.setFilterMode(Qt.MatchFlag.MatchContains)
+        self.completer.setMaxVisibleItems(8)
+        self.urlbar.setCompleter(self.completer)
+        self.completer.activated.connect(lambda *_: QTimer.singleShot(0, self._navigate))
+        self._refresh_completer()
         self.btn_star = self._btn("☆", "Lesezeichen (Strg+D)", lambda: self.toggle_bookmark())
         self.btn_new = self._btn("+", "Neuer Tab (Strg+T)", lambda: self.new_tab())
         self.btn_menu = QToolButton()
@@ -734,17 +1025,23 @@ class Jadon(QMainWindow):
     def _build_menu(self):
         m = QMenu(self)
         add_action(m, "Neuer Tab\tStrg+T", lambda: self.new_tab())
+        add_action(m, "Geschlossenen Tab öffnen\tStrg+Shift+T", lambda: self.reopen_closed_tab())
         add_action(m, "Neues Fenster\tStrg+N", lambda: self.new_window())
         add_action(m, "Privates Fenster\tStrg+Shift+N", lambda: self.new_window(True))
         m.addSeparator()
         self.menu_bookmarks = m.addMenu("Lesezeichen")
         self.menu_bookmarks.aboutToShow.connect(self._fill_bookmarks)
-        self.menu_history = m.addMenu("Verlauf")
+        self.menu_history = m.addMenu("Verlauf (zuletzt besucht)")
         self.menu_history.aboutToShow.connect(self._fill_history)
+        add_action(m, "Verlauf anzeigen …\tStrg+H", lambda: self.show_history())
+        add_action(m, "Downloads …\tStrg+J", lambda: self.show_downloads())
+        add_action(m, "Browserdaten löschen …\tStrg+Shift+Entf", lambda: self.clear_data())
         m.addSeparator()
         add_action(m, "Auf Seite suchen\tStrg+F", lambda: self.show_find())
         add_action(m, "Drucken …\tStrg+P", lambda: self.print_page())
         add_action(m, "Als PDF speichern …", lambda: self.save_pdf())
+        add_action(m, "Seite speichern …\tStrg+S", lambda: self.save_page())
+        add_action(m, "Seitenquelltext anzeigen\tStrg+U", lambda: self.view_source())
         m.addSeparator()
         add_action(m, "Vergrößern\tStrg++", lambda: self._zoom(+0.1))
         add_action(m, "Verkleinern\tStrg+-", lambda: self._zoom(-0.1))
@@ -753,6 +1050,7 @@ class Jadon(QMainWindow):
         add_action(m, "Entwicklertools\tF12", lambda: self.dev_tools())
         add_action(m, "Bildschirm-/Mikrofon-Diagnose", lambda: self.open_test())
         m.addSeparator()
+        add_action(m, "Einstellungen …\tStrg+,", lambda: self.show_settings())
         add_action(m, "Beenden", lambda: QApplication.closeAllWindows())
         return m
 
@@ -760,25 +1058,93 @@ class Jadon(QMainWindow):
         def sc(keys, fn):
             QShortcut(QKeySequence(keys), self, activated=fn)
         sc("Ctrl+T", lambda: self.new_tab())
+        sc("Ctrl+Shift+T", lambda: self.reopen_closed_tab())
         sc("Ctrl+W", lambda: self.close_tab(self.tabbar.currentIndex()))
         sc("Ctrl+N", lambda: self.new_window())
         sc("Ctrl+Shift+N", lambda: self.new_window(True))
         sc("Ctrl+L", lambda: (self.urlbar.setFocus(), self.urlbar.selectAll()))
         sc("Ctrl+R", lambda: self.view().reload())
         sc("F5", lambda: self.view().reload())
+        sc("Ctrl+Shift+R", lambda: self.hard_reload())
+        sc("Ctrl+F5", lambda: self.hard_reload())
         sc("Ctrl+D", lambda: self.toggle_bookmark())
         sc("Ctrl+F", lambda: self.show_find())
         sc("Ctrl+P", lambda: self.print_page())
+        sc("Ctrl+S", lambda: self.save_page())
+        sc("Ctrl+U", lambda: self.view_source())
+        sc("Ctrl+H", lambda: self.show_history())
+        sc("Ctrl+J", lambda: self.show_downloads())
+        sc("Ctrl+Shift+Del", lambda: self.clear_data())
+        sc("Ctrl+,", lambda: self.show_settings())
         sc("F12", lambda: self.dev_tools())
         sc("Alt+Left", lambda: self.view().back())
         sc("Alt+Right", lambda: self.view().forward())
+        sc("Alt+Home", lambda: self.home())
         sc("Ctrl++", lambda: self._zoom(+0.1))
         sc("Ctrl+=", lambda: self._zoom(+0.1))
         sc("Ctrl+-", lambda: self._zoom(-0.1))
         sc("Ctrl+0", lambda: self.view().setZoomFactor(1.0))
         sc("Ctrl+Tab", lambda: self.tabbar.setCurrentIndex((self.tabbar.currentIndex() + 1) % self.tabbar.count()))
         sc("Ctrl+Shift+Tab", lambda: self.tabbar.setCurrentIndex((self.tabbar.currentIndex() - 1) % self.tabbar.count()))
+        sc("Ctrl+PgDown", lambda: self.tabbar.setCurrentIndex((self.tabbar.currentIndex() + 1) % self.tabbar.count()))
+        sc("Ctrl+PgUp", lambda: self.tabbar.setCurrentIndex((self.tabbar.currentIndex() - 1) % self.tabbar.count()))
+        for n in range(1, 9):
+            sc(f"Ctrl+{n}", lambda n=n: self.tabbar.setCurrentIndex(n - 1) if n - 1 < len(self.tabs) else None)
+        sc("Ctrl+9", lambda: self.tabbar.setCurrentIndex(len(self.tabs) - 1))
         sc("F11", lambda: self.set_fullscreen(not self.isFullScreen()))
+
+    # ---------- Dialoge und Extras ----------
+    def show_downloads(self):
+        if self._dl_dialog is None:
+            self._dl_dialog = DownloadsDialog(self)
+        self._dl_dialog.show()
+        self._dl_dialog.raise_()
+        self._dl_dialog.activateWindow()
+
+    def show_history(self):
+        HistoryDialog(self).exec()
+
+    def show_settings(self):
+        SettingsDialog(self).exec()
+
+    def clear_data(self):
+        answer = QMessageBox.question(
+            self, "Browserdaten löschen",
+            "Cookies, Cache und Verlauf löschen?\nDu wirst dabei auf Webseiten abgemeldet.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if answer != QMessageBox.StandardButton.Yes:
+            return
+        self.profile.clearHttpCache()
+        self.profile.cookieStore().deleteAllCookies()
+        self.profile.clearAllVisitedLinks()
+        save_json(HISTORY_FILE, [])
+        self._refresh_completer()
+        notify(APP_NAME, "Cookies, Cache und Verlauf wurden gelöscht.")
+
+    def reopen_closed_tab(self):
+        if self.closed_tabs:
+            self.new_tab(self.closed_tabs.pop())
+
+    def hard_reload(self):
+        self.view().triggerPageAction(QWebEnginePage.WebAction.ReloadAndBypassCache)
+
+    def view_source(self):
+        url = self.view().url()
+        if url.scheme() in ("http", "https"):
+            self.new_tab("view-source:" + url.toString())
+
+    def save_page(self):
+        self.view().triggerPageAction(QWebEnginePage.WebAction.SavePage)
+
+    def _refresh_completer(self):
+        urls = []
+        if not self.private:
+            urls += [h.get("url", "") for h in reversed(load_json(HISTORY_FILE, [])[-300:])]
+        urls += [b.get("url", "") for b in load_json(BOOKMARKS_FILE, [])]
+        seen = set()
+        self.completer_model.setStringList([u for u in urls if u and not (u in seen or seen.add(u))])
 
     # ---------- Fenster ----------
     def new_window(self, private=False):
@@ -802,54 +1168,120 @@ class Jadon(QMainWindow):
     def view(self):
         return self.stack.currentWidget().view
 
-    def home(self):
-        self.view().setHtml(START_PAGE, QUrl(f"https://{START_HOST}/"))
+    def home(self, view=None):
+        v = view or self.view()
+        homepage = SETTINGS.get("homepage", "").strip()
+        if homepage:
+            v.setUrl(resolve_input(homepage))
+        else:
+            v.setHtml(START_PAGE.replace("{{SEARCH}}", json.dumps(search_url())), QUrl(f"https://{START_HOST}/"))
 
-    def new_tab(self, url="start"):
+    def new_tab(self, url="start", activate=True):
         tab = Tab(self, self.profile)
+        self.tabs.append(tab)
         self.stack.addWidget(tab)
         i = self.tabbar.addTab("Neuer Tab")
-        self.tabbar.setCurrentIndex(i)
+        if activate or len(self.tabs) == 1:
+            self.tabbar.setCurrentIndex(i)
         v = tab.view
         v.titleChanged.connect(lambda t, tab=tab: self._set_title(tab, t))
         v.urlChanged.connect(lambda u, v=v: self._url_changed(v, u))
         v.iconChanged.connect(lambda ic, tab=tab: self._set_icon(tab, ic))
         v.loadProgress.connect(lambda p, v=v: self._progress(v, p))
         v.loadFinished.connect(lambda ok, v=v: self._load_finished(v, ok))
+        v.page().recentlyAudibleChanged.connect(lambda _a, tab=tab: self.refresh_tab_label(tab))
         if url == "start":
-            self.home()
-            self.urlbar.setFocus()
+            self.home(v)
+            if activate:
+                self.urlbar.setFocus()
         elif url:
             v.setUrl(QUrl(url))
         return tab
 
     def close_tab(self, i):
-        if self.tabbar.count() <= 1:
+        if not 0 <= i < len(self.tabs):
+            return
+        if len(self.tabs) <= 1:
             self.close()
             return
-        w = self.stack.widget(i)
+        tab = self.tabs[i]
+        u = tab.view.url()
+        if not u.isEmpty() and u.host() != START_HOST and u.toString() != "about:blank":
+            self.closed_tabs.append(u.toString())
+        self.tabs.pop(i)
         self.tabbar.removeTab(i)
-        self.stack.removeWidget(w)
-        w.deleteLater()
-        self.stack.setCurrentIndex(self.tabbar.currentIndex())
+        self.stack.removeWidget(tab)
+        tab.deleteLater()
+
+    def close_view(self, view):
+        """window.close() von der Seite – nur für Popups/Login-Fenster erlaubt, nicht für normale Tabs."""
+        if not getattr(view, "is_popup", False):
+            return
+        for tab in self.tabs:
+            if tab.view is view:
+                QTimer.singleShot(0, lambda t=tab: self.close_tab(self.tabs.index(t)) if t in self.tabs else None)
+                return
+
+    def _tab_moved(self, frm, to):
+        self.tabs.insert(to, self.tabs.pop(frm))
+
+    def _tab_menu(self, pos):
+        i = self.tabbar.tabAt(pos)
+        if not 0 <= i < len(self.tabs):
+            return
+        tab = self.tabs[i]
+        m = QMenu(self)
+        add_action(m, "Neuer Tab", lambda: self.new_tab())
+        add_action(m, "Neu laden", lambda: tab.view.reload())
+        add_action(m, "Tab duplizieren", lambda: self._duplicate(tab))
+        muted = tab.view.page().isAudioMuted()
+        add_action(m, "Ton einschalten" if muted else "Tab stummschalten", lambda: self._toggle_mute(tab))
+        m.addSeparator()
+        add_action(m, "Tab schließen", lambda: self.close_tab(self.tabs.index(tab)))
+        add_action(m, "Andere Tabs schließen", lambda: self._close_others(tab))
+        m.exec(self.tabbar.mapToGlobal(pos))
+
+    def _duplicate(self, tab):
+        u = tab.view.url()
+        self.new_tab("start" if u.isEmpty() or u.host() == START_HOST else u.toString())
+
+    def _toggle_mute(self, tab):
+        page = tab.view.page()
+        page.setAudioMuted(not page.isAudioMuted())
+        self.refresh_tab_label(tab)
+
+    def _close_others(self, keep):
+        for t in list(self.tabs):
+            if t is not keep and t in self.tabs:
+                self.close_tab(self.tabs.index(t))
 
     def _set_title(self, tab, title):
-        i = self.stack.indexOf(tab)
-        if i >= 0:
-            self.tabbar.setTabText(i, (title or "Neuer Tab")[:40])
-            self.tabbar.setTabToolTip(i, title)
-        if i == self.tabbar.currentIndex():
+        if tab not in self.tabs:
+            return
+        tab.title = title
+        self.refresh_tab_label(tab)
+        if tab is self.tabs[self.tabbar.currentIndex()]:
             self.setWindowTitle(f"{title} – {APP_NAME}" if title else APP_NAME)
 
+    def refresh_tab_label(self, tab):
+        """Tab-Beschriftung mit Lautsprecher-Symbol, wenn die Seite Ton abspielt (🔇 = stummgeschaltet)."""
+        if tab not in self.tabs:
+            return
+        i = self.tabs.index(tab)
+        page = tab.view.page()
+        prefix = "🔇 " if page.isAudioMuted() else ("🔊 " if page.recentlyAudible() else "")
+        title = tab.title or "Neuer Tab"
+        self.tabbar.setTabText(i, prefix + title[:40])
+        self.tabbar.setTabToolTip(i, title)
+
     def _set_icon(self, tab, icon):
-        i = self.stack.indexOf(tab)
-        if i >= 0:
-            self.tabbar.setTabIcon(i, icon)
+        if tab in self.tabs:
+            self.tabbar.setTabIcon(self.tabs.index(tab), icon)
 
     def _tab_changed(self, i):
-        if i < 0 or i >= self.stack.count():
+        if i < 0 or i >= len(self.tabs):
             return
-        self.stack.setCurrentIndex(i)
+        self.stack.setCurrentWidget(self.tabs[i])
         v = self.view()
         self._url_changed(v, v.url())
         self.setWindowTitle(f"{v.title()} – {APP_NAME}" if v.title() else APP_NAME)
@@ -859,12 +1291,7 @@ class Jadon(QMainWindow):
         text = self.urlbar.text().strip()
         if not text:
             return
-        looks_like_url = (
-            re.match(r"^[a-zA-Z][a-zA-Z0-9+.-]*://", text)
-            or text.startswith(("localhost", "about:", "view-source:"))
-            or (" " not in text and ("." in text or ":" in text))
-        )
-        url = QUrl.fromUserInput(text) if looks_like_url else QUrl(SEARCH_URL.format(quote_plus(text)))
+        url = resolve_input(text)
         self.view().setUrl(url)
         self.view().setFocus()
 
@@ -892,7 +1319,8 @@ class Jadon(QMainWindow):
             hist = load_json(HISTORY_FILE, [])
             if not hist or hist[-1]["url"] != url.toString():
                 hist.append({"title": view.title() or url.toString(), "url": url.toString(), "t": int(time.time())})
-                save_json(HISTORY_FILE, hist[-500:])
+                save_json(HISTORY_FILE, hist[-1000:])
+                self._refresh_completer()
 
     def _reload_or_stop(self):
         self.view().stop() if self.btn_reload.text() == "✕" else self.view().reload()
@@ -913,6 +1341,7 @@ class Jadon(QMainWindow):
         else:
             self.bookmarks.append({"title": v.title() or url, "url": url})
         save_json(BOOKMARKS_FILE, self.bookmarks)
+        self._refresh_completer()
         self._url_changed(v, v.url())
 
     def _fill_bookmarks(self):
@@ -1057,6 +1486,7 @@ def main():
     if BINDING == "PySide6":
         print("Hinweis: PySide6 spielt kein H.264/AAC ab (Twitch, YouTube-Livestreams). "
               "Installiere für volle Video-Unterstützung: pip install PyQt6 PyQt6-WebEngine")
+    load_settings()
     QCoreApplication.setAttribute(Qt.ApplicationAttribute.AA_ShareOpenGLContexts)
     app = QApplication(sys.argv)
     app.setApplicationName(APP_NAME)

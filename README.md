@@ -37,13 +37,19 @@ Webseiten werden über das Modul *Qt WebEngine* dargestellt. Das bedeutet:
 
 **Wie ein normaler Browser:**
 
-- Tabs (Mittelklick schließt), Favicons, mehrere Fenster und **privates Fenster** (nichts wird gespeichert)
+- Tabs (Mittelklick schließt, per Maus verschiebbar), Favicons, mehrere Fenster und **privates Fenster** (nichts wird gespeichert)
+- Tab-Menü (Rechtsklick): duplizieren, **stummschalten**, andere schließen; 🔊 zeigt Tabs mit Ton (TikTok, YouTube …)
+- Geschlossenen Tab wiederherstellen, Adressleiste mit Vorschlägen aus Verlauf und Lesezeichen
+- Verlauf-Fenster mit Suche, **Downloads-Fenster** mit Fortschritt, „Browserdaten löschen“
+- Einstellungen: Suchmaschine (DuckDuckGo, Google, Bing, Brave, Ecosia, Startpage), eigene Startseite, Download-Ordner
+- Seitenquelltext, „Seite speichern“, Neu laden ohne Cache
+- Seiten, deren Prozess abstürzt, laden sich automatisch neu; `window.close()` schließt Login-Popups
 - Adressleiste, die auch als Suchfeld dient (Standard: DuckDuckGo)
 - Zurück, Vor, Neu laden/Stopp, Startseite, Ladebalken
 - Lesezeichen (★) und Verlauf
 - Suche auf der Seite (`Strg + F`), Zoom, Vollbild
 - Drucken und „Als PDF speichern"
-- Downloads mit Speichern-Dialog und Benachrichtigung
+- Downloads: standardmäßig direkt in den Downloads-Ordner (in den Einstellungen auf „Speichern unter“ umschaltbar), mit Benachrichtigung
 - Entwicklertools (`F12`)
 - Integrierter PDF-Viewer
 - Cookies, Logins und Berechtigungen bleiben erhalten
@@ -63,7 +69,7 @@ Webseiten werden über das Modul *Qt WebEngine* dargestellt. Das bedeutet:
 Voraussetzung: **Python 3.9 oder neuer** und **PyQt6 6.8 oder neuer** mit PyQt6-WebEngine (wird mit `requirements.txt` installiert).
 
 ```bash
-git clone https://github.com/DEIN-NAME/jadon.git
+git clone https://github.com/jadonhansel8/jadon.git
 cd jadon
 
 # optional, aber empfohlen: virtuelle Umgebung
@@ -103,6 +109,15 @@ die Abhängigkeiten. Voraussetzung ist ein installiertes Python (<https://www.py
 | `Strg + +` / `Strg + -` | Zoom vergrößern/verkleinern |
 | `Strg + 0`              | Zoom zurücksetzen       |
 | `Strg + N`              | Neues Fenster           |
+| `Strg + Shift + T`      | Geschlossenen Tab öffnen |
+| `Strg + 1` … `8` / `9`  | Zu Tab 1–8 / letztem Tab |
+| `Strg + Shift + R` / `Strg + F5` | Neu laden ohne Cache |
+| `Strg + H`              | Verlauf                 |
+| `Strg + J`              | Downloads               |
+| `Strg + Shift + Entf`   | Browserdaten löschen    |
+| `Strg + S`              | Seite speichern         |
+| `Strg + U`              | Seitenquelltext         |
+| `Strg + ,`              | Einstellungen           |
 | `Strg + Shift + N`      | Privates Fenster        |
 | `Strg + D`              | Lesezeichen setzen/entfernen |
 | `Strg + F`              | Auf Seite suchen        |
@@ -204,7 +219,10 @@ Für H.264/AAC können außerdem Patentlizenzen relevant sein. Wer das vermeiden
 - **DRM-Streaming** (Netflix, Disney+, Prime Video in HD) braucht das Widevine-Modul, das Qt
   nicht mitliefert. Es kann funktionieren, wenn Google Chrome installiert ist und du den Pfad
   per `QTWEBENGINE_CHROMIUM_FLAGS="--widevine-path=..."` angibst.
-- Es gibt keine Erweiterungen (Chrome-Web-Store) und keine Passwort-Synchronisierung.
+- Es gibt keine Erweiterungen (Chrome-Web-Store), keinen Passwort-Manager und keine Synchronisierung.
+- Bild-im-Bild, Chromecast und Google-Konto-Funktionen des Chrome-Browsers fehlen. Manche Dienste (z. B. die
+  Google-Anmeldung) lehnen eingebettete Browser ab; bei TikTok & Co. hilft oft die Anmeldung per QR-Code oder E-Mail.
+- Rechtschreibprüfung und Hell-/Dunkel-Umschaltung sind noch nicht eingebaut.
 - Einige Dienste (z. B. Google Meet) melden sich mit der Qt-Engine unterschiedlich gut. Jadon gibt sich
   deshalb als Chrome aus; sollte etwas nicht gehen, bitte ein Issue mit Seite und Fehlermeldung öffnen.
 
@@ -225,8 +243,8 @@ Lesezeichen und Verlauf liegen als JSON-Dateien im Ordner `~/.jadon/`.
 ### Design anpassen
 
 Alle Farben stehen im `STYLE`-Block. Der Akzent ist Violett (`#a78bfa`) mit Cyan (`#6ee7f9`).
-Ersetze diese Werte, um Jadon in deiner eigenen Farbe zu gestalten. Die Suchmaschine änderst du
-über die Konstante `SEARCH_URL` (und das `action`-Attribut in `START_PAGE`).
+Ersetze diese Werte, um Jadon in deiner eigenen Farbe zu gestalten. Die Suchmaschine und die Startseite
+änderst du unter **⋯ → Einstellungen** (gespeichert in `~/.jadon/settings.json`).
 
 ## Als eigenständige App bauen
 
@@ -273,8 +291,8 @@ verifizierst, was du bei einem Alarm tun kannst und wie Jadon selbst geschützt 
 - [x] Suche auf der Seite
 - [x] Privater Modus
 - [x] Mikrofon, Kamera, Bildschirmfreigabe
-- [ ] Downloads-Übersicht mit Fortschritt
-- [ ] Einstellungsseite (Suchmaschine, Startseite)
+- [x] Downloads-Übersicht mit Fortschritt
+- [x] Einstellungen (Suchmaschine, Startseite, Downloads)
 - [ ] Rechtschreibprüfung
 - [ ] Hell-/Dunkel-Umschaltung
 
