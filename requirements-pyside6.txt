@@ -1,2 +1,2 @@
 # Alternative (MIT/LGPL), aber OHNE H.264/AAC: Twitch & YouTube-Livestreams laufen damit nicht.
-PySide6>=6.8
+PySide6>=6.12.0
