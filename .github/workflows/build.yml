@@ -114,7 +114,7 @@ jobs:
       # In privaten Repos wird der Schritt übersprungen, statt den Build scheitern zu lassen.
       - name: Herkunftsnachweis erstellen
         if: github.event_name != 'pull_request' && github.event.repository.private == false
-        uses: actions/attest-build-provenance@v2
+        uses: actions/attest-build-provenance@v4
         with:
           subject-path: ${{ matrix.artifact }}
 
