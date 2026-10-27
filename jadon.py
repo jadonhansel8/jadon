@@ -366,7 +366,8 @@ def save_json(path, data):
         pass
 
 
-DEFAULT_SETTINGS = {"search_engine": "DuckDuckGo", "homepage": "", "ask_download": False}
+DEFAULT_SETTINGS = {"search_engine": "DuckDuckGo", "homepage": "", "ask_download": False,
+                    "chrome_version": ""}  # leer = Version der eingebauten Engine; z. B. "130" überschreibt sie
 SETTINGS = dict(DEFAULT_SETTINGS)
 
 
@@ -498,9 +499,46 @@ def on_notification(note):
 # und kein „Google Chrome“ – das sieht für die Seiten nach einem eingebetteten Browser aus, und sie
 # zeigen dann „Browser wird nicht unterstützt“, Verifizierungsschleifen oder spielen keine Videos ab.
 # Dieses Skript läuft vor jeder Seite und macht die Angaben so, wie sie ein normaler Chrome liefert.
+# Google lehnt die Anmeldung in eingebetteten Chromium-Browsern oft ab („Dieser Browser ist möglicherweise
+# nicht sicher“). Mit einer Firefox-Kennung werden die Login-Seiten dagegen akzeptiert (Trick u. a. von
+# qutebrowser). Das gilt NUR für die Anmelde-Hosts; Meet, YouTube, WhatsApp, Discord usw. bleiben „Chrome“.
+GOOGLE_LOGIN_HOSTS = {"accounts.google.com", "accounts.youtube.com"}
+FIREFOX_VERSION = "140.0"
+
+
+def firefox_user_agent():
+    if sys.platform.startswith("win"):
+        os_part = "Windows NT 10.0; Win64; x64"
+    elif sys.platform == "darwin":
+        os_part = "Macintosh; Intel Mac OS X 10.15"
+    else:
+        os_part = "X11; Linux x86_64"
+    return f"Mozilla/5.0 ({os_part}; rv:{FIREFOX_VERSION}) Gecko/20100101 Firefox/{FIREFOX_VERSION}"
+
+
+FIREFOX_UA = firefox_user_agent()
+
 COMPAT_JS = r"""
 (function () {
   try {
+    var host = location.hostname;
+    if (host === "accounts.google.com" || host === "accounts.youtube.com") {
+      // Login-Seiten: auch per JavaScript wie Firefox auftreten (passend zum HTTP-Header).
+      var ua = "__FIREFOX_UA__";
+      var nav = Object.getPrototypeOf(navigator);
+      var def = function (k, v) {
+        try {
+          Object.defineProperty(nav, k, { get: function () { return v; }, configurable: true, enumerable: true });
+        } catch (e) {}
+      };
+      def("userAgent", ua);
+      def("appVersion", "5.0 (" + ua.substring(ua.indexOf("(") + 1, ua.indexOf(";")) + ")");
+      def("vendor", "");
+      def("productSub", "20100101");
+      def("userAgentData", undefined);
+      try { delete window.chrome; } catch (e) {}
+      return;
+    }
     var major = "__CHROME_MAJOR__", full = major + ".0.0.0";
     var brands = function () { return [
       { brand: "Not)A;Brand", version: "8" },
@@ -566,7 +604,14 @@ class ClientHintsFixer(QWebEngineUrlRequestInterceptor):
 
     def interceptRequest(self, info):
         try:
-            if info.requestUrl().scheme() == "https":
+            url = info.requestUrl()
+            if url.scheme() != "https":
+                return
+            if url.host() in GOOGLE_LOGIN_HOSTS:
+                # Google-Anmeldung: Firefox-Kennung, keine Chrome-Client-Hints.
+                info.setHttpHeader(b"User-Agent", FIREFOX_UA.encode("ascii"))
+                info.setHttpHeader(b"sec-ch-ua", b"")
+            else:
                 info.setHttpHeader(b"sec-ch-ua", self.value)
         except Exception:
             pass
@@ -576,7 +621,9 @@ def install_chrome_compat(profile, major):
     try:
         script = QWebEngineScript()
         script.setName("jadon-chrome-compat")
-        script.setSourceCode(COMPAT_JS.replace("__CHROME_MAJOR__", str(major)))
+        script.setSourceCode(
+            COMPAT_JS.replace("__CHROME_MAJOR__", str(major)).replace("__FIREFOX_UA__", FIREFOX_UA)
+        )
         script.setInjectionPoint(QWebEngineScript.InjectionPoint.DocumentCreation)
         script.setWorldId(QWebEngineScript.ScriptWorldId.MainWorld)
         script.setRunsOnSubFrames(True)
@@ -591,6 +638,9 @@ def install_chrome_compat(profile, major):
 def configure_profile(profile, private=False):
     """Alles, was ein 'normaler' Browser kann: WebRTC, Mikrofon, Kamera, Screen-Sharing, Clipboard ..."""
     ua = re.sub(r"\s*QtWebEngine/[\d.]+", "", profile.httpUserAgent())  # sieht aus wie Chrome → bessere Kompatibilität
+    forced = str(SETTINGS.get("chrome_version", "")).strip()
+    if forced.isdigit():  # optional: neuere Chrome-Version melden (WhatsApp/Discord prüfen die Mindestversion)
+        ua = re.sub(r"Chrome/\d+", f"Chrome/{forced}", ua)
     profile.setHttpUserAgent(ua)
     match = re.search(r"Chrome/(\d+)", ua)
     install_chrome_compat(profile, match.group(1) if match else "130")

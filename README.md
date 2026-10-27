@@ -180,6 +180,17 @@ minimiert ist.
    python jadon.py
    ```
 
+### WhatsApp-Anrufe (web.whatsapp.com)
+
+WhatsApp Web kann Sprach- und Videoanrufe, wenn der Browser als aktuelles Chrome erkannt wird.
+
+1. `web.whatsapp.com` öffnen, QR-Code mit dem Handy scannen.
+2. Chat öffnen, Hörer- oder Kamera-Symbol anklicken und die Mikrofon-/Kamera-Abfrage mit **Erlauben** bestätigen
+   (die Entscheidung wird gespeichert).
+3. Erscheint „Browser wird nicht unterstützt“ oder fehlt der Anruf-Knopf, melde eine neuere Chrome-Version.
+   Lege dazu in `~/.jadon/settings.json` den Eintrag `"chrome_version": "136"` an (Zahl ggf. erhöhen) und starte Jadon neu.
+   Der Anruf-Knopf wird von WhatsApp schrittweise freigeschaltet und kann je nach Konto noch fehlen.
+
 ### Discord im Browser (discord.com/app)
 
 So teilst du mit möglichst vollständiger Übertragung:
@@ -220,8 +231,9 @@ Für H.264/AAC können außerdem Patentlizenzen relevant sein. Wer das vermeiden
   nicht mitliefert. Es kann funktionieren, wenn Google Chrome installiert ist und du den Pfad
   per `QTWEBENGINE_CHROMIUM_FLAGS="--widevine-path=..."` angibst.
 - Es gibt keine Erweiterungen (Chrome-Web-Store), keinen Passwort-Manager und keine Synchronisierung.
-- Bild-im-Bild, Chromecast und Google-Konto-Funktionen des Chrome-Browsers fehlen. Manche Dienste (z. B. die
-  Google-Anmeldung) lehnen eingebettete Browser ab; bei TikTok & Co. hilft oft die Anmeldung per QR-Code oder E-Mail.
+- Bild-im-Bild, Chromecast und Google-Konto-Funktionen des Chrome-Browsers fehlen. Bei der
+  Google-Anmeldung (accounts.google.com) meldet sich Jadon als Firefox, weil Google eingebettete Chromium-Browser
+  oft ablehnt; alle anderen Seiten sehen weiterhin Chrome. Bei TikTok & Co. hilft oft die Anmeldung per QR-Code oder E-Mail.
 - Rechtschreibprüfung und Hell-/Dunkel-Umschaltung sind noch nicht eingebaut.
 - Einige Dienste (z. B. Google Meet) melden sich mit der Qt-Engine unterschiedlich gut. Jadon gibt sich
   deshalb als Chrome aus; sollte etwas nicht gehen, bitte ein Issue mit Seite und Fehlermeldung öffnen.
